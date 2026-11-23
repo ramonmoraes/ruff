@@ -37,9 +37,7 @@ use ruff_python_formatter::{FormatModuleError, QuoteStyle, format_module_source,
 use ruff_source_file::{LineIndex, LineRanges, OneIndexed, SourceFile, SourceFileBuilder};
 use ruff_text_size::{TextLen, TextRange, TextSize};
 use ruff_workspace::FormatterSettings;
-use ruff_workspace::resolver::{
-    ResolvedFile, Resolver, RootSettings, match_exclusion, project_files_in_path,
-};
+use ruff_workspace::resolver::{ResolvedFile, Resolver, RootSettings, match_exclusion};
 
 use crate::args::{ConfigArguments, FormatArguments, FormatRange};
 use crate::cache::{Cache, FileCacheKey, PackageCacheMap, PackageCaches};
@@ -75,7 +73,16 @@ pub(crate) fn format(
 ) -> Result<ExitStatus> {
     let mode = FormatMode::from_cli(&cli);
     let files = resolve_default_files(cli.files, false);
-    let (paths, resolver) = project_files_in_path(&files, root_settings, config_arguments)?;
+    #[cfg(unix)]
+    let (paths, resolver) = super::format_discovery_cache::project_files(
+        &files,
+        root_settings,
+        config_arguments,
+        !cli.no_cache && cli.check && cli.range.is_none(),
+    )?;
+    #[cfg(not(unix))]
+    let (paths, resolver) =
+        ruff_workspace::resolver::project_files_in_path(&files, root_settings, config_arguments)?;
 
     let output_format = root_settings.resolved.settings.output_format;
 
