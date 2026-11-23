@@ -40,7 +40,7 @@ use rustc_hash::FxHashMap;
 use crate::ast_ids::ScopedUseId;
 use crate::interned_nodes::InternedNodes;
 use crate::predicate::ScopedPredicateId;
-use crate::rank::{RankBitBox, RankBitBoxVec};
+use crate::rank::RankBitBox;
 use crate::scope::FileScopeId;
 use crate::use_def::BindingsSnapshotId;
 
@@ -132,7 +132,6 @@ impl NarrowingConstraints {
 #[derive(Debug, Default)]
 pub struct NarrowingConstraintsBuilder {
     interiors: InternedNodes<ScopedNarrowingConstraint, InteriorNode>,
-    interior_used: RankBitBoxVec,
     and_cache: FxHashMap<
         (ScopedNarrowingConstraint, ScopedNarrowingConstraint),
         ScopedNarrowingConstraint,
@@ -145,29 +144,15 @@ pub struct NarrowingConstraintsBuilder {
 
 impl NarrowingConstraintsBuilder {
     pub(crate) fn build(self) -> NarrowingConstraints {
-        if self.interior_used.first_zero().is_none() {
-            NarrowingConstraints {
-                used_interiors: self.interiors.into_nodes_boxed_slice(),
-                used_indices: None,
-            }
-        } else {
-            let used_interiors = self
-                .interiors
-                .into_node_iterator()
-                .zip(&self.interior_used)
-                .filter_map(|(interior, used)| used.then_some(interior))
-                .collect();
-            let used_indices = RankBitBox::from_bits(self.interior_used);
-            NarrowingConstraints {
-                used_interiors,
-                used_indices: Some(used_indices),
-            }
+        let (used_interiors, used_indices) = self.interiors.into_used_nodes();
+        NarrowingConstraints {
+            used_interiors,
+            used_indices,
         }
     }
 
     pub(crate) fn mark_used(&mut self, node: ScopedNarrowingConstraint) {
-        if !node.is_terminal() && !self.interior_used[node.index()] {
-            self.interior_used.set(node.index(), true);
+        if !node.is_terminal() && self.interiors.mark_used(node) {
             let node = self.interiors[node];
             self.mark_used(node.if_true);
             self.mark_used(node.if_uncertain);
@@ -228,11 +213,7 @@ impl NarrowingConstraintsBuilder {
             });
         }
 
-        let (id, inserted) = self.interiors.intern(node);
-        if inserted {
-            self.interior_used.push(false);
-        }
-        id
+        self.interiors.intern(node)
     }
 
     pub(crate) fn add_atom(&mut self, predicate: ScopedPredicateId) -> ScopedNarrowingConstraint {

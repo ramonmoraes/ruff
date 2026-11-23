@@ -10,7 +10,7 @@ use rustc_hash::FxHashMap;
 use crate::interned_nodes::InternedNodes;
 use crate::narrowing_constraints::{NarrowingConstraintsBuilder, ScopedNarrowingConstraint};
 use crate::predicate::ScopedPredicateId;
-use crate::rank::{RankBitBox, RankBitBoxVec};
+use crate::rank::RankBitBox;
 
 /// A ternary formula that defines under what conditions a binding is visible. (A ternary formula
 /// is just like a boolean formula, but with `Ambiguous` as a third potential result. See the
@@ -176,7 +176,6 @@ impl ReachabilityConstraints {
 #[derive(Debug, Default)]
 pub struct ReachabilityConstraintsBuilder {
     interiors: InternedNodes<ScopedReachabilityConstraintId, InteriorNode>,
-    interior_used: RankBitBoxVec,
     not_cache: FxHashMap<ScopedReachabilityConstraintId, ScopedReachabilityConstraintId>,
     and_cache: FxHashMap<
         (
@@ -201,23 +200,10 @@ impl ReachabilityConstraintsBuilder {
     }
 
     pub(crate) fn build(self) -> ReachabilityConstraints {
-        if self.interior_used.first_zero().is_none() {
-            ReachabilityConstraints {
-                used_interiors: self.interiors.into_nodes_boxed_slice(),
-                used_indices: None,
-            }
-        } else {
-            let used_interiors = self
-                .interiors
-                .into_node_iterator()
-                .zip(&self.interior_used)
-                .filter_map(|(interior, used)| used.then_some(interior))
-                .collect();
-            let used_indices = RankBitBox::from_bits(self.interior_used);
-            ReachabilityConstraints {
-                used_interiors,
-                used_indices: Some(used_indices),
-            }
+        let (used_interiors, used_indices) = self.interiors.into_used_nodes();
+        ReachabilityConstraints {
+            used_interiors,
+            used_indices,
         }
     }
 
@@ -225,8 +211,7 @@ impl ReachabilityConstraintsBuilder {
     /// only calculated for intermediate values, and which don't need to be included in the final
     /// built result.
     pub(crate) fn mark_used(&mut self, node: ScopedReachabilityConstraintId) {
-        if !node.is_terminal() && !self.interior_used[node.index()] {
-            self.interior_used.set(node.index(), true);
+        if !node.is_terminal() && self.interiors.mark_used(node) {
             let node = self.interiors[node];
             self.mark_used(node.if_true);
             self.mark_used(node.if_ambiguous);
@@ -353,11 +338,7 @@ impl ReachabilityConstraintsBuilder {
             return node.if_true;
         }
 
-        let (id, inserted) = self.interiors.intern(node);
-        if inserted {
-            self.interior_used.push(false);
-        }
-        id
+        self.interiors.intern(node)
     }
 
     /// Adds a new reachability constraint that checks a single [`super::predicate::Predicate`].
