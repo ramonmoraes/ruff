@@ -2838,6 +2838,13 @@
       "description": "Options for the `pycodestyle` plugin.",
       "type": "object",
       "properties": {
+        "ignore-overlong-comments": {
+          "description": "Whether line-length violations (`E501`) should be skipped for comments.\n\nWhen enabled, comments are excluded when measuring a line's length.\nComment-only lines are never reported, and a line with a trailing\ncomment is only reported if the code before the comment exceeds the\nline length on its own.\n\nThis is useful when the formatter already keeps code within the line\nlength, and you don't want `E501` to flag the wording of comments.\n\nThis option does not affect [`doc-line-too-long`](https://docs.astral.sh/ruff/rules/doc-line-too-long/)\n(`W505`). To limit the length of comments separately from code, use\n[`max-doc-length`](#lint_pycodestyle_max-doc-length).",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "ignore-overlong-task-comments": {
           "description": "Whether line-length violations (`E501`) should be triggered for\ncomments starting with [`task-tags`](#lint_task-tags) (by default: \"TODO\", \"FIXME\",\nand \"XXX\").",
           "type": [

@@ -105,6 +105,8 @@ pub(crate) fn doc_line_too_long(
             &[]
         },
         settings.tab_size,
+        // `ignore-overlong-comments` only applies to `E501`. Comments are what this rule checks.
+        false,
     ) {
         context.report_diagnostic(
             DocLineTooLong(overlong.width(), limit.value() as usize),

@@ -442,6 +442,24 @@ mod tests {
         Ok(())
     }
 
+    #[test_case(false)]
+    #[test_case(true)]
+    fn ignore_overlong_comments(ignore_overlong_comments: bool) -> Result<()> {
+        let snapshot = format!("ignore_overlong_comments_{ignore_overlong_comments}");
+        let diagnostics = test_path(
+            Path::new("pycodestyle/E501_6.py"),
+            &settings::LinterSettings {
+                pycodestyle: Settings {
+                    ignore_overlong_comments,
+                    ..Settings::default()
+                },
+                ..settings::LinterSettings::for_rule(Rule::LineTooLong)
+            },
+        )?;
+        assert_diagnostics!(snapshot, diagnostics);
+        Ok(())
+    }
+
     #[test]
     fn max_doc_length() -> Result<()> {
         let diagnostics = test_path(

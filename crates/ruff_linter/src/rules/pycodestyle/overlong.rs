@@ -15,12 +15,15 @@ pub(super) struct Overlong {
 impl Overlong {
     /// Returns an [`Overlong`] if the measured line exceeds the configured line length, or `None`
     /// otherwise.
+    ///
+    /// If `ignore_comments` is `true`, any comment on the line is excluded from the measurement.
     pub(super) fn try_from_line(
         line: &Line,
         comment_ranges: &CommentRanges,
         limit: LineLength,
         task_tags: &[String],
         tab_size: IndentWidth,
+        ignore_comments: bool,
     ) -> Option<Self> {
         // A tab can span several columns. For a line without tabs, the byte length
         // alone bounds its display width.
@@ -35,7 +38,7 @@ impl Overlong {
         }
 
         // Strip trailing comments and re-measure the line, if needed.
-        let line = StrippedLine::from_line(line, comment_ranges, task_tags);
+        let line = StrippedLine::from_line(line, comment_ranges, task_tags, ignore_comments);
         let width = match &line {
             StrippedLine::WithoutPragma(line) => {
                 let width = measure(line.as_str(), tab_size);
@@ -113,14 +116,28 @@ enum StrippedLine<'a> {
 
 impl<'a> StrippedLine<'a> {
     /// Strip trailing comments from a [`Line`], if the line ends with a pragma comment (like
-    /// `# type: ignore`) or, if necessary, a task comment (like `# TODO`).
-    fn from_line(line: &'a Line<'a>, comment_ranges: &CommentRanges, task_tags: &[String]) -> Self {
+    /// `# type: ignore`), if necessary, a task comment (like `# TODO`), or any comment at all if
+    /// `ignore_comments` is `true`.
+    fn from_line(
+        line: &'a Line<'a>,
+        comment_ranges: &CommentRanges,
+        task_tags: &[String],
+        ignore_comments: bool,
+    ) -> Self {
         let [comment_range] = comment_ranges.comments_in_range(line.range()) else {
             return Self::Unchanged(line);
         };
 
         // Convert from absolute to relative range.
         let comment_range = comment_range - line.start();
+
+        // Ex) `x = 1  # some explanation` or a comment-only line. For a comment-only line, the
+        // remaining prefix is empty (or only indentation), so the line is never reported.
+        if ignore_comments {
+            let prefix = line[..usize::from(comment_range.start())].trim_end();
+            return Self::WithoutPragma(Line::new(prefix, line.start()));
+        }
+
         let comment = &line.as_str()[comment_range];
 
         // Ex) `# type: ignore` or `# some comment # noqa: F401`

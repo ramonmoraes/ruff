@@ -37,6 +37,13 @@ use crate::settings::LinterSettings;
 /// also ignore comments that start with any of the specified [`lint.task-tags`]
 /// (e.g., `# TODO:`).
 ///
+/// If [`lint.pycodestyle.ignore-overlong-comments`] is `true`, this rule will
+/// ignore comments altogether when measuring a line: comment-only lines are
+/// never flagged, and a line with a trailing comment is only flagged if the
+/// code before the comment is too long on its own. To limit the length of
+/// comments separately from code, use [`doc-line-too-long`][W505] (`W505`)
+/// with [`lint.pycodestyle.max-doc-length`].
+///
 /// ## Example
 /// ```python
 /// my_function(param1, param2, param3, param4, param5, param6, param7, param8, param9, param10)
@@ -67,9 +74,12 @@ use crate::settings::LinterSettings;
 /// - `line-length`
 /// - `lint.task-tags`
 /// - `lint.pycodestyle.ignore-overlong-task-comments`
+/// - `lint.pycodestyle.ignore-overlong-comments`
 /// - `lint.pycodestyle.max-line-length`
+/// - `lint.pycodestyle.max-doc-length`
 ///
 /// [PEP 8]: https://peps.python.org/pep-0008/#maximum-line-length
+/// [W505]: https://docs.astral.sh/ruff/rules/doc-line-too-long/
 #[derive(ViolationMetadata)]
 #[violation_metadata(stable_since = "v0.0.18", category = Category::Formatting)]
 pub(crate) struct LineTooLong(usize, usize);
@@ -101,6 +111,7 @@ pub(crate) fn line_too_long(
             &[]
         },
         settings.tab_size,
+        settings.pycodestyle.ignore_overlong_comments,
     ) {
         context.report_diagnostic(
             LineTooLong(overlong.width(), limit.value() as usize),

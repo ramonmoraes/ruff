@@ -1,0 +1,29 @@
+---
+source: crates/ruff_linter/src/rules/pycodestyle/mod.rs
+---
+E501 Line too long (90 > 88)
+  --> E501_6.py:9:89
+   |
+ 8 | # Code that is too long on its own is always reported.
+ 9 | very_long_variable_name = some_function_name(first_argument, second_argument, third_arg_x)
+   |                                                                                         ^^
+10 | very_long_variable_name = some_function_name(first_argument, second_argument, third_arg_x)  # comment
+   |
+
+E501 Line too long (90 > 88)
+  --> E501_6.py:10:89
+   |
+ 8 | # Code that is too long on its own is always reported.
+ 9 | very_long_variable_name = some_function_name(first_argument, second_argument, third_arg_x)
+10 | very_long_variable_name = some_function_name(first_argument, second_argument, third_arg_x)  # comment
+   |                                                                                         ^^
+11 |
+12 | # Text inside a string is not a comment.
+   |
+
+E501 Line too long (91 > 88)
+  --> E501_6.py:13:89
+   |
+12 | # Text inside a string is not a comment.
+13 | message = "# This is not a comment, even though it starts with a hash, and it is too long."
+   |                                                                                         ^^^

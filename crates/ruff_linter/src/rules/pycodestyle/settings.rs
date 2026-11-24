@@ -11,6 +11,7 @@ pub struct Settings {
     pub max_line_length: LineLength,
     pub max_doc_length: Option<LineLength>,
     pub ignore_overlong_task_comments: bool,
+    pub ignore_overlong_comments: bool,
 }
 
 impl fmt::Display for Settings {
@@ -22,6 +23,7 @@ impl fmt::Display for Settings {
                 self.max_line_length,
                 self.max_doc_length | optional,
                 self.ignore_overlong_task_comments,
+                self.ignore_overlong_comments,
             ]
         }
         Ok(())
