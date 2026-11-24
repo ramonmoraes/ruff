@@ -238,6 +238,34 @@ fn expected_types_are_collected_only_for_open_files() -> anyhow::Result<()> {
 }
 
 #[test]
+fn typed_dict_get_default_inference_agrees_for_open_and_closed_files() -> anyhow::Result<()> {
+    for open in [false, true] {
+        let mut db = setup_db();
+        db.write_dedented(
+            "src/main.py",
+            r#"
+            from typing_extensions import NotRequired, TypedDict, reveal_type
+
+            class Row(TypedDict):
+                a: int
+                b: int
+                c: NotRequired[int]
+
+            def f(row: Row):
+                value: int | list[int] | list[object] = row.get("c", [1])
+                reveal_type(value)
+            "#,
+        )?;
+        if open {
+            let file = system_path_to_file(&db, "src/main.py").unwrap();
+            db.open_file(file);
+        }
+        assert_revealed_type(&db, "src/main.py", "int | list[int]");
+    }
+    Ok(())
+}
+
+#[test]
 fn compact_definition_types_omit_owner() -> anyhow::Result<()> {
     assert!(
         std::mem::size_of::<DefinitionTypes>()
