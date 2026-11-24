@@ -1700,9 +1700,20 @@ impl<'db> StaticClassLiteral<'db> {
             }
         }
 
+        if self.has_own_slot_descriptor(db, name) {
+            return Member::definitely_declared(self.own_slot_descriptor(
+                db,
+                env,
+                specialization,
+                name,
+            ));
+        }
+
         let sources = self.member_sources(db);
         let symbol = sources.table.symbol_id(name);
-        // attrs removes field specifiers from the class namespace.
+        // The specifier remains available inside the class body for decorators like
+        // `@field.validator`. Hide it after class creation so instance lookup uses
+        // the field's value type without also including the specifier type.
         if let Some(symbol) = symbol
             && attrs::unannotated_field(db, self, symbol).is_some()
         {
@@ -1739,15 +1750,6 @@ impl<'db> StaticClassLiteral<'db> {
                 _ => ty,
             }
         });
-
-        if self.has_own_slot_descriptor(db, name) {
-            return Member::definitely_declared(self.own_slot_descriptor(
-                db,
-                env,
-                specialization,
-                name,
-            ));
-        }
 
         if member.is_undefined()
             || name == "__slots__" && self.has_generated_slots(db) && !self.has_explicit_slots(db)
