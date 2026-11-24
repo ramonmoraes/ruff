@@ -3714,14 +3714,16 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                     // (single target, no unpackings). That means it's a valid syntactic form
                     // for a legacy TypeVar creation; check for that.
                     let callable_type = self.infer_callee(&call_expr.func);
-                    if let Some(function) = callable_type.as_function_literal()
+
+                    let ty = if let Some(function) = callable_type.as_function_literal()
                         && attrs::field_instance_kind(self.db(), function)
                             == FieldInstanceKind::Attrs
                     {
                         self.setup_dataclass_field_specifiers();
-                    }
-
-                    let ty = if let Some(namedtuple_kind) =
+                        let ty = self.infer_call_expression_impl(call_expr, callable_type, tcx);
+                        self.dataclass_field_specifiers.clear();
+                        ty
+                    } else if let Some(namedtuple_kind) =
                         NamedTupleKind::from_type(self.db(), callable_type)
                     {
                         self.infer_namedtuple_call_expression(
@@ -3822,19 +3824,11 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                         ty
                     };
 
-                    self.dataclass_field_specifiers.clear();
                     self.store_expression_type(value, ty);
                     ty
                 } else {
                     let ty = self.infer_expression(value, tcx);
-                    if target
-                        .as_name_expr()
-                        .is_some_and(|name| name.id == "dataclass")
-                    {
-                        attrs::dataclass_alias(self.db(), definition, ty).unwrap_or(ty)
-                    } else {
-                        ty
-                    }
+                    attrs::dataclass_alias(self.db(), definition, target, ty).unwrap_or(ty)
                 };
 
                 self.typevar_binding_context = previous_typevar_binding_context;

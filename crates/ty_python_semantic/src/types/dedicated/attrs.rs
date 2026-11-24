@@ -1,6 +1,6 @@
 use itertools::Itertools;
 use ruff_db::parsed::parsed_module;
-use ruff_python_ast::name::Name;
+use ruff_python_ast::{Expr, name::Name};
 use ruff_python_stdlib::identifiers::is_mangled_private;
 use rustc_hash::FxHashSet;
 use ty_module_resolver::{KnownModule, file_to_module};
@@ -58,10 +58,12 @@ pub(in crate::types) fn set_auto_attribs(flags: &mut DataclassFlags, auto: Type<
 pub(in crate::types) fn dataclass_alias<'db>(
     db: &'db dyn Db,
     definition: Definition<'db>,
+    target: &Expr,
     ty: Type<'db>,
 ) -> Option<Type<'db>> {
     let function = ty.as_function_literal()?;
-    if !function.is_known(db, KnownFunction::AttrAttrs)
+    if target.as_name_expr()?.id != "dataclass"
+        || !function.is_known(db, KnownFunction::AttrAttrs)
         || !file_to_module(db, definition.program_file(db).resolver_file(db))?
             .is_known(db, KnownModule::Attr)
     {
@@ -95,11 +97,8 @@ pub(in crate::types) fn unannotated_field<'db>(
         .exactly_one()
         .ok()?;
     let definition = binding.binding.definition()?;
-    Some((
-        binding.binding_order,
-        definition,
-        field_type(db, definition)?,
-    ))
+    let ty = field_type(db, definition)?;
+    Some((binding.binding_order, definition, ty))
 }
 
 #[salsa::tracked(returns(copy))]

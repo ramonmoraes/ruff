@@ -2925,12 +2925,13 @@ impl<'db> StaticClassLiteral<'db> {
                 CodeGeneratorKind::from_class(db, self.into()).unwrap_or(field_policy);
             self.has_dataclass_param(db, own_field_policy, DataclassFlags::KW_ONLY)
         });
-        let is_attrs = attrs::is_attrs_class(db, self);
+        let flags = self
+            .dataclass_params(db)
+            .map_or(DataclassFlags::empty(), |p| p.flags(db));
+        let is_attrs = flags.contains(DataclassFlags::ATTRS);
+        let mut explicit_fields = flags.contains(DataclassFlags::ATTRS_EXPLICIT);
         let mut kw_only_sentinel_field_seen = false;
         let mut field_declarations = Vec::new();
-        let mut explicit_fields = self
-            .dataclass_params(db)
-            .is_some_and(|p| p.flags(db).contains(DataclassFlags::ATTRS_EXPLICIT));
         let mut decorated_defaults = attrs::DecoratedDefaults::new();
 
         for (symbol_id, declarations) in use_def.all_end_of_scope_symbol_declarations() {
@@ -2949,7 +2950,8 @@ impl<'db> StaticClassLiteral<'db> {
             }
 
             // Field contents come from the declarations live at end of scope, but field order is
-            // anchored to the first reachable annotated declaration in the class body.
+            // anchored to the first reachable annotation or, for an unannotated attrs field,
+            // the field specifier assignment.
             let annotation_order = use_def
                 .reachable_symbol_declarations(symbol_id)
                 .first_reachable_declaration_order(db, |declaration| {
@@ -2982,7 +2984,8 @@ impl<'db> StaticClassLiteral<'db> {
         let mut class_variables = Vec::new();
         for (_, symbol_id, result, inferred) in field_declarations {
             let symbol = table.symbol(symbol_id);
-            let first_declaration = result.first_declaration.or(inferred.map(|(def, _)| def));
+            let (binding, inferred_ty) = inferred.unzip();
+            let first_declaration = result.first_declaration.or(binding);
             let attr = result.ignore_conflicting_declarations();
             if attr.is_class_var() {
                 if field_policy.is_dataclass_like() || field_policy.is_pydantic() {
@@ -2991,16 +2994,12 @@ impl<'db> StaticClassLiteral<'db> {
                 continue;
             }
 
-            if let Some(attr_ty) = attr
-                .place
-                .ignore_possibly_undefined()
-                .or(inferred.map(|(_, ty)| ty))
-            {
+            if let Some(attr_ty) = attr.place.ignore_possibly_undefined().or(inferred_ty) {
                 // Annotation-only declarations in stubs also act as bindings for attribute
                 // lookup, but they do not supply field defaults.
                 let mut default_ty = if field_policy == CodeGeneratorKind::TypedDict
                     || (self.file(db).is_stub(db)
-                        && inferred.is_none()
+                        && binding.is_none()
                         && !first_declaration.is_some_and(|definition| {
                             matches!(
                                 definition.kind(db),
