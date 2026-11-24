@@ -2888,12 +2888,6 @@ impl<'db> Bindings<'db> {
                                 // `order=False`, we extract the argument type and overwrite
                                 // the corresponding flag in `dataclass_params`.
                                 let mut flags = dataclass_params.flags(db);
-                                if flags.contains(DataclassFlags::ATTRS)
-                                    && let Ok(Some(auto)) =
-                                        overload.parameter_type_by_name(db, "auto_attribs", false)
-                                {
-                                    attrs::set_auto_attribs(&mut flags, auto);
-                                }
 
                                 for (param, flag) in DATACLASS_FLAGS {
                                     if let Some(ty) = call_arguments.iter().find_map(|argument| {

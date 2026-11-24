@@ -42,7 +42,7 @@ reveal_type(user.internal_name)  # revealed: str
 
 ## Unannotated fields
 
-By default, `attr.s` collects only explicit fields. The `type` argument can specify the field type.
+The `type` argument specifies the constructor parameter and instance attribute types.
 
 ```py
 import attr
@@ -57,7 +57,9 @@ reveal_type(VersionInfo(year=2026).year)  # revealed: int
 VersionInfo(year="2026")  # error: [invalid-argument-type]
 ```
 
-Modern decorators also collect only explicit fields if any field specifier lacks an annotation.
+If any field specifier lacks an annotation, ty collects only explicit fields. This is the default
+behavior of `attrs.define`. ty currently applies the same rule to all attrs decorators regardless of
+`auto_attribs`.
 
 ```py
 from attrs import field
@@ -76,22 +78,6 @@ reveal_type(User.__init__)
 user = User("Alice", id=12, token=1)
 reveal_type(user.id)  # revealed: int | None
 reveal_type(user.active)  # revealed: bool
-```
-
-The classic decorator also collects annotations with `auto_attribs=True` or its shorthand
-`attr.dataclass`.
-
-```py
-@attr.s(auto_attribs=True)
-class A:
-    x: int
-
-@attr.dataclass
-class B:
-    x: int
-
-A(x=1)  # ok
-B(x=1)  # ok
 ```
 
 ## Private fields

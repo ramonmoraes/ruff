@@ -212,7 +212,6 @@ bitflags! {
         const KW_ONLY_DEFAULT = 1 << 2;
         const FROZEN_DEFAULT = 1 << 3;
         const SLOTS_DEFAULT = 1 << 4;
-        const ATTR_DATACLASS = 1 << 5;
     }
 }
 
@@ -1529,7 +1528,7 @@ impl<'db> FunctionType<'db> {
             .rev()
             .find_map(|overload| overload.dataclass_transformer_params(db))?;
         let mut flags = DataclassFlags::from(params.flags(db));
-        flags |= attrs::decorator_flags(db, self, params.flags(db));
+        flags.set(DataclassFlags::ATTRS, attrs::is_known_decorator(db, self));
         Some(DataclassParams::new(db, flags, params.field_specifiers(db)))
     }
 

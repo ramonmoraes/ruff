@@ -3827,8 +3827,7 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                     self.store_expression_type(value, ty);
                     ty
                 } else {
-                    let ty = self.infer_expression(value, tcx);
-                    attrs::dataclass_alias(self.db(), definition, target, ty).unwrap_or(ty)
+                    self.infer_expression(value, tcx)
                 };
 
                 self.typevar_binding_context = previous_typevar_binding_context;

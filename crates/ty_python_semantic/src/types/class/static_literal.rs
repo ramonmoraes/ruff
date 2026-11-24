@@ -2925,11 +2925,8 @@ impl<'db> StaticClassLiteral<'db> {
                 CodeGeneratorKind::from_class(db, self.into()).unwrap_or(field_policy);
             self.has_dataclass_param(db, own_field_policy, DataclassFlags::KW_ONLY)
         });
-        let flags = self
-            .dataclass_params(db)
-            .map_or(DataclassFlags::empty(), |p| p.flags(db));
-        let is_attrs = flags.contains(DataclassFlags::ATTRS);
-        let mut explicit_fields = flags.contains(DataclassFlags::ATTRS_EXPLICIT);
+        let is_attrs = attrs::is_attrs_class(db, self);
+        let mut explicit_fields = false;
         let mut kw_only_sentinel_field_seen = false;
         let mut field_declarations = Vec::new();
         let mut decorated_defaults = attrs::DecoratedDefaults::new();
@@ -2967,7 +2964,7 @@ impl<'db> StaticClassLiteral<'db> {
             } else if is_attrs
                 && let Some((order, definition, ty)) = attrs::unannotated_field(db, self, symbol_id)
             {
-                // Modern attrs decorators fall back to explicit fields if any field lacks an annotation.
+                // Apply the default collection rule of `attrs.define` to all attrs decorators.
                 explicit_fields = true;
                 (order, Some((definition, ty)))
             } else {
