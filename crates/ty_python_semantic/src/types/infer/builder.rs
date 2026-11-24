@@ -4769,6 +4769,19 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
         }
     }
 
+    /// Whether an annotation uses `typing.Optional`, without inferring its type argument.
+    pub(super) fn resolves_to_optional(mut self, reference: &ast::Expr) -> bool {
+        self.deferred_state = DeferredExpressionState::from(self.defer_annotations());
+        self.context.inference_flags |= InferenceFlags::CHECK_UNBOUND_TYPEVARS;
+        let (ty, source) = self.infer_type_expression_reference(reference);
+        let db = self.db();
+        // Normal assignment inference collects diagnostics for the complete annotation.
+        let _ = self.context.finish();
+        // A legacy alias takes precedence over its runtime value in a type expression.
+        ty == Type::SpecialForm(SpecialFormType::Optional)
+            && source.is_none_or(|source| super::legacy_type_alias_definition(db, source).is_none())
+    }
+
     /// Infer an annotated assignment's annotation using the file's deferred-annotation semantics.
     fn infer_annotated_assignment_annotation(
         &mut self,
@@ -12628,10 +12641,20 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                     // A class-body TypeGuard can narrow the method to an abstract function
                     // even if the decorator preserves the type of the original definition.
                     let bindings = self.index.use_def_map(definition.file_scope(self.db()));
-                    if !bindings.may_narrow(definition.place(self.db()))
-                        && is_identity_decorator(self.db(), self.program_environment(), ty)
-                    {
-                        continue;
+                    if !bindings.may_narrow(definition.place(self.db())) {
+                        if is_identity_decorator(self.db(), self.program_environment(), ty) {
+                            continue;
+                        }
+                        if let Type::ClassLiteral(ClassLiteral::Static(class)) = ty
+                            && function
+                                .node(self.module())
+                                .returns
+                                .as_deref()
+                                .is_some_and(super::is_simple_annotation)
+                            && class.constructs_plain_instance(self.db())
+                        {
+                            continue;
+                        }
                     }
                 }
                 may_produce_abstract_method = true;
