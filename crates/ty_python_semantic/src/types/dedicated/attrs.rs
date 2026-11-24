@@ -69,7 +69,7 @@ fn field_type<'db>(db: &'db dyn Db, definition: Definition<'db>) -> Option<Type<
     else {
         return None;
     };
-    if field.kind(db) != FieldInstanceKind::Attrs {
+    if !field.kind(db).is_attrs() {
         return None;
     }
     // Interpret the already inferred argument as a type. String forward references
@@ -183,7 +183,7 @@ impl DecoratedDefaults {
         place: ScopedPlaceId,
         field: FieldInstance<'db>,
     ) -> bool {
-        self.fields.contains(&place) && field.kind(db) == FieldInstanceKind::Attrs
+        self.fields.contains(&place) && field.kind(db).is_attrs()
     }
 
     /// This function is called for declarations in the attrs class. If the declaration refers

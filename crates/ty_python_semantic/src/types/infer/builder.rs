@@ -112,7 +112,6 @@ use crate::types::infer::{
     TypeAndRange, TypeExpressionFlags, infer_statement_types, nearest_enclosing_class,
     nearest_enclosing_function, original_class_type,
 };
-use crate::types::known_instance::FieldInstanceKind;
 use crate::types::match_pattern::{ClassPatternPositionalResult, class_pattern_positional_result};
 use crate::types::member::{class_body_declaration_from_bases, inherited_class_body_declaration};
 use crate::types::narrow::NarrowingEvaluatorExtension;
@@ -3716,8 +3715,7 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                     let callable_type = self.infer_callee(&call_expr.func);
 
                     let ty = if let Some(function) = callable_type.as_function_literal()
-                        && attrs::field_instance_kind(self.db(), function)
-                            == FieldInstanceKind::Attrs
+                        && attrs::field_instance_kind(self.db(), function).is_attrs()
                     {
                         self.setup_dataclass_field_specifiers();
                         let ty = self.infer_call_expression_impl(call_expr, callable_type, tcx);
