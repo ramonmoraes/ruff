@@ -3,15 +3,19 @@ use ruff_db::parsed::parsed_module;
 use ruff_python_ast::name::Name;
 use ruff_python_stdlib::identifiers::is_mangled_private;
 use rustc_hash::FxHashSet;
+use ty_module_resolver::{KnownModule, file_to_module};
 use ty_python_core::{
-    DeclarationsIterator, ast_ids::HasScopedUseId, definition::DefinitionKind,
-    place::ScopedPlaceId, use_def_map,
+    DeclarationsIterator, ScopedDefinitionId, ast_ids::HasScopedUseId, definition::Definition,
+    definition::DefinitionKind, place::ScopedPlaceId, symbol::ScopedSymbolId, use_def_map,
 };
 
+use crate::types::function::{DataclassTransformerFlags, DataclassTransformerParams};
+use crate::types::infer::InferenceFlags;
 use crate::types::known_instance::{FieldInstance, FieldInstanceKind};
 use crate::types::{
-    BoundTypeVarInstance, DataclassFlags, FunctionType, GenericContext, KnownFunction, Parameter,
-    Parameters, Signature, StaticClassLiteral, Type, TypeVarVariance,
+    BoundTypeVarInstance, DataclassFlags, FunctionType, GenericContext, KnownFunction,
+    KnownInstanceType, LiteralValueTypeKind, Parameter, Parameters, Signature, StaticClassLiteral,
+    Type, TypeVarVariance,
 };
 use crate::{Db, ProgramEnvironment};
 
@@ -25,14 +29,115 @@ pub(in crate::types) fn is_attrs_class<'db>(
         .is_some_and(|params| params.flags(db).contains(DataclassFlags::ATTRS))
 }
 
-/// Returns whether `decorator` resolves to `attr.attrs`, `attrs.define`, or `attrs.frozen`.
-pub(in crate::types) fn is_known_decorator<'db>(
+pub(in crate::types) fn decorator_flags<'db>(
     db: &'db dyn Db,
     decorator: FunctionType<'db>,
-) -> bool {
-    matches!(
-        decorator.known(db),
-        Some(KnownFunction::AttrAttrs | KnownFunction::AttrsDefine | KnownFunction::AttrsFrozen)
+    flags: DataclassTransformerFlags,
+) -> DataclassFlags {
+    match decorator.known(db) {
+        Some(KnownFunction::AttrAttrs)
+            if flags.contains(DataclassTransformerFlags::ATTR_DATACLASS) =>
+        {
+            DataclassFlags::ATTRS | DataclassFlags::ATTRS_ANNOTATED
+        }
+        Some(KnownFunction::AttrAttrs) => DataclassFlags::ATTRS | DataclassFlags::ATTRS_EXPLICIT,
+        Some(KnownFunction::AttrsDefine | KnownFunction::AttrsFrozen) => DataclassFlags::ATTRS,
+        _ => DataclassFlags::empty(),
+    }
+}
+
+pub(in crate::types) fn set_auto_attribs(flags: &mut DataclassFlags, auto: Type<'_>) {
+    if let Some(LiteralValueTypeKind::Bool(value)) = auto.as_literal_value_kind() {
+        flags.set(DataclassFlags::ATTRS_ANNOTATED, value);
+        flags.set(DataclassFlags::ATTRS_EXPLICIT, !value);
+    }
+}
+
+/// The stub assigns `dataclass = attrs`, but at runtime this is a partial application
+/// with `auto_attribs=True`. Mark the binding at its source so imports preserve the default.
+pub(in crate::types) fn dataclass_alias<'db>(
+    db: &'db dyn Db,
+    definition: Definition<'db>,
+    ty: Type<'db>,
+) -> Option<Type<'db>> {
+    let function = ty.as_function_literal()?;
+    if !function.is_known(db, KnownFunction::AttrAttrs)
+        || !file_to_module(db, definition.program_file(db).resolver_file(db))?
+            .is_known(db, KnownModule::Attr)
+    {
+        return None;
+    }
+    let params = function
+        .iter_overloads_and_implementation(db)
+        .rev()
+        .find_map(|f| f.dataclass_transformer_params(db))?;
+    let params = DataclassTransformerParams::new(
+        db,
+        params.flags(db) | DataclassTransformerFlags::ATTR_DATACLASS,
+        params.field_specifiers(db),
+    );
+    Some(Type::FunctionLiteral(
+        function.with_dataclass_transformer_params(db, params),
+    ))
+}
+
+pub(in crate::types) fn unannotated_field<'db>(
+    db: &'db dyn Db,
+    class: StaticClassLiteral<'db>,
+    symbol: ScopedSymbolId,
+) -> Option<(ScopedDefinitionId, Definition<'db>, Type<'db>)> {
+    let flags = class.dataclass_params(db)?.flags(db);
+    if !flags.contains(DataclassFlags::ATTRS) || flags.contains(DataclassFlags::ATTRS_ANNOTATED) {
+        return None;
+    }
+    let binding = use_def_map(db, class.body_scope(db))
+        .end_of_scope_symbol_bindings(symbol)
+        .exactly_one()
+        .ok()?;
+    let definition = binding.binding.definition()?;
+    Some((
+        binding.binding_order,
+        definition,
+        field_type(db, definition)?,
+    ))
+}
+
+#[salsa::tracked(returns(copy))]
+fn field_type<'db>(db: &'db dyn Db, definition: Definition<'db>) -> Option<Type<'db>> {
+    let DefinitionKind::Assignment(assignment) = definition.kind(db) else {
+        return None;
+    };
+    if assignment.unpack().is_some() {
+        return None;
+    }
+    let module = parsed_module(db, definition.python_file(db)).load(db);
+    let call = assignment.value(&module).as_call_expr()?;
+    let Type::KnownInstance(KnownInstanceType::Field(field)) =
+        crate::types::binding_type(db, definition)
+    else {
+        return None;
+    };
+    if field.kind(db) != FieldInstanceKind::Attrs {
+        return None;
+    }
+    // Interpret the already inferred argument as a type. String forward references
+    // would require separate inference as annotations.
+    if let Some(keyword) = call.arguments.find_keyword("type") {
+        let ty = crate::types::definition_expression_type(db, definition, &keyword.value);
+        if !ty.is_none(db) {
+            return Some(
+                ty.in_type_expression(db, definition.scope(db), None, InferenceFlags::empty())
+                    .unwrap_or_else(|_| Type::unknown()),
+            );
+        }
+    }
+    let env = ProgramEnvironment::from_scope(definition.scope(db));
+    Some(
+        field
+            .converter(db)
+            .map(|(_, output)| output)
+            .or_else(|| field.default_type(db).map(|ty| ty.promote(db, &env)))
+            .unwrap_or_else(Type::unknown),
     )
 }
 

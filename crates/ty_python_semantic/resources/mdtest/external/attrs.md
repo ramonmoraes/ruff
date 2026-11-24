@@ -40,6 +40,60 @@ reveal_type(user.id)  # revealed: int
 reveal_type(user.internal_name)  # revealed: str
 ```
 
+## Unannotated fields
+
+By default, `attr.s` collects only explicit fields. The `type` argument can specify the field type.
+
+```py
+import attr
+
+@attr.attrs
+class VersionInfo:
+    year = attr.attrib(type=int)
+    label: str = "version"
+
+reveal_type(VersionInfo.__init__)  # revealed: (self: VersionInfo, /, year: int) -> None
+reveal_type(VersionInfo(year=2026).year)  # revealed: int
+VersionInfo(year="2026")  # error: [invalid-argument-type]
+```
+
+Modern decorators also collect only explicit fields if any field specifier lacks an annotation.
+
+```py
+from attrs import field
+
+@attr.define
+class User:
+    name: str = field()
+    id = attr.ib(type=int | None, default=None)
+    active = field(default=True)
+    token = field(kw_only=True)
+    category: str = "user"
+    count = int()
+
+# revealed: (self: User, /, name: str, id: int | None = ..., active: bool = True, *, token: Unknown) -> None
+reveal_type(User.__init__)
+user = User("Alice", id=12, token=1)
+reveal_type(user.id)  # revealed: int | None
+reveal_type(user.active)  # revealed: bool
+```
+
+The classic decorator also collects annotations with `auto_attribs=True` or its shorthand
+`attr.dataclass`.
+
+```py
+@attr.s(auto_attribs=True)
+class A:
+    x: int
+
+@attr.dataclass
+class B:
+    x: int
+
+A(x=1)  # ok
+B(x=1)  # ok
+```
+
 ## Private fields
 
 attrs strips leading underscores from field names when generating constructor parameters.

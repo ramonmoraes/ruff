@@ -65,7 +65,7 @@ use crate::types::class::{
 };
 use crate::types::constraints::{CandidateSolutions, ConstraintSetBuilder, Solutions};
 use crate::types::context::{InferContext, InferContextResult};
-use crate::types::dedicated::pydantic;
+use crate::types::dedicated::{attrs, pydantic};
 use crate::types::diagnostic::{
     self, ABSTRACT_CLASS_INSTANTIATION, AssignmentDeclaration, CONFLICTING_DECLARATIONS,
     CYCLIC_TYPE_ALIAS_DEFINITION, DYNAMIC_FUNCTION_DECORATOR_RETURN, GeneratorMismatchKind,
@@ -112,6 +112,7 @@ use crate::types::infer::{
     TypeAndRange, TypeExpressionFlags, infer_statement_types, nearest_enclosing_class,
     nearest_enclosing_function, original_class_type,
 };
+use crate::types::known_instance::FieldInstanceKind;
 use crate::types::match_pattern::{ClassPatternPositionalResult, class_pattern_positional_result};
 use crate::types::member::{class_body_declaration_from_bases, inherited_class_body_declaration};
 use crate::types::narrow::NarrowingEvaluatorExtension;
@@ -3713,6 +3714,12 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                     // (single target, no unpackings). That means it's a valid syntactic form
                     // for a legacy TypeVar creation; check for that.
                     let callable_type = self.infer_callee(&call_expr.func);
+                    if let Some(function) = callable_type.as_function_literal()
+                        && attrs::field_instance_kind(self.db(), function)
+                            == FieldInstanceKind::Attrs
+                    {
+                        self.setup_dataclass_field_specifiers();
+                    }
 
                     let ty = if let Some(namedtuple_kind) =
                         NamedTupleKind::from_type(self.db(), callable_type)
@@ -3815,10 +3822,19 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                         ty
                     };
 
+                    self.dataclass_field_specifiers.clear();
                     self.store_expression_type(value, ty);
                     ty
                 } else {
-                    self.infer_expression(value, tcx)
+                    let ty = self.infer_expression(value, tcx);
+                    if target
+                        .as_name_expr()
+                        .is_some_and(|name| name.id == "dataclass")
+                    {
+                        attrs::dataclass_alias(self.db(), definition, ty).unwrap_or(ty)
+                    } else {
+                        ty
+                    }
                 };
 
                 self.typevar_binding_context = previous_typevar_binding_context;

@@ -1979,6 +1979,8 @@ bitflags! {
         const SLOTS = 1 << 8   ;
         const WEAKREF_SLOT = 1 << 9;
         const ATTRS = 1 << 10;
+        const ATTRS_EXPLICIT = 1 << 11;
+        const ATTRS_ANNOTATED = 1 << 12;
     }
 }
 
